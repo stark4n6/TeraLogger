@@ -19,11 +19,11 @@ ascii_art = '''
         @KevinPagano3 | @stark4n6 | startme.stark4n6.com
                                                                      '''
 def is_platform_windows():
-    '''Returns True if running on Windows'''
+    # Returns True if running on Windows
     return os.name == 'nt'
 
 def open_sqlite_db_readonly(path):
-    '''Opens an sqlite db in read-only mode, so original db (and -wal/journal are intact)'''
+    # Opens an sqlite db in read-only mode, so original db (and -wal/journal are intact)
     if is_platform_windows():
         if path.startswith('\\\\?\\UNC\\'): # UNC long path
             path = "%5C%5C%3F%5C" + path[4:]
@@ -36,6 +36,7 @@ def open_sqlite_db_readonly(path):
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
 
 def main():
+    # SQLite query for history dbs
     sql_query_history = """
     select 
     Source,
@@ -69,6 +70,7 @@ def main():
     end
     from Files"""
     
+    # SQLite query for main db
     sql_query_main = '''
     select
     Name AS "name",
@@ -82,7 +84,7 @@ def main():
     start_time = time.time()
     print(ascii_art)
     
-    #Command line arguments
+    # Command line arguments
     parser = argparse.ArgumentParser(description='TeraLogger v0.0.1 by @KevinPagano3 | @stark4n6 | https://github.com/stark4n6/TeraLogger')
     parser.add_argument('-i', '--input_path', required=True, type=str, action="store", help='Input file/folder path')
     parser.add_argument('-o', '--output_path', required=True, type=str, action="store", help='Output folder path')
@@ -133,12 +135,13 @@ def main():
         splitter = '/'
     #-------------------------------   
     
-    print('Source: '+ input_path)
-    print('Destination: '+ output_path)
     print('-'* (len('Source: '+ input_path)))
+    print('Source: '+ input_path.replace('\\\\?\\',''))
+    print('Destination: '+ output_path.replace('\\\\?\\',''))
     
     data_headers = ('Job Start','Job End','Source File Path','Source Folder','Destination Folder','Status','File Size','Is Folder','File Creation Date','File Access Date','File Write Date','Source CRC','Target CRC','Message','Marked','Hidden','Job File Path')
     
+    base = 'TeraLogger_Out_'
     db_name = ''
     job_start = ''
     job_end = ''
@@ -150,6 +153,10 @@ def main():
     count = 0
         
     history_folder_path = input_path + 'History' + splitter
+    
+    output_ts = time.strftime("%Y%m%d-%H%M%S")
+    out_folder = output_path + base + output_ts + splitter
+    os.makedirs(out_folder)
 
     # Parsing main.db job database
     for main_file_path in glob.glob(f"{input_path}main.db"):
@@ -198,6 +205,8 @@ def main():
                 marked = row[10]
                 hidden = row[11]            
                 
+                og_db_path = sqlite3_file_path.replace('\\\\?\\','')
+                
                 for key in main_dict.keys():
                     if basename == key:
                         db_name = main_dict[key].get('name')
@@ -206,13 +215,14 @@ def main():
                         src_path = main_dict[key].get('src_path')
                         target_path = main_dict[key].get('target_path')
        
-                        data_list.append((job_start,job_end,og_file_path,src_path,target_path,file_state,file_size,is_folder,create_ts,access_ts,write_ts,source_crc,target_crc,message,marked,hidden,sqlite3_file_path))
+                        data_list.append((job_start,job_end,og_file_path,src_path,target_path,file_state,file_size,is_folder,create_ts,access_ts,write_ts,source_crc,target_crc,message,marked,hidden,og_db_path))
     
                 count += 1
         else:
             print(f"Skipping file {sqlite3_file_path} because it is corrupted.")
-            
-    with open(output_path + 'results.tsv', 'w', newline='') as f_output:
+    
+    # Create CSV file output
+    with open(out_folder + 'TeraLogger_History_' + output_ts +'.tsv', 'w', newline='') as f_output:
         tsv_writer = csv.writer(f_output, delimiter='\t')
         tsv_writer.writerow(data_headers)
         for i in data_list:
