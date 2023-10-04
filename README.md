@@ -44,3 +44,7 @@ options:
   -o OUTPUT_PATH, --output_path OUTPUT_PATH
                         Output folder path
 ```
+
+### To-Do List
+Add main.db parser as second CSV file output
+Error checks for missing files or incorrect paths
