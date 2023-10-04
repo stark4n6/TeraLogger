@@ -1,6 +1,7 @@
 # TeraLogger
-
-
+<p align="center">
+  <img width="300" height="300" src="https://github.com/stark4n6/TeraLogger/blob/main/Artwork/TeracopyLogo.jpg">
+</p>
 
 TeraLogger is a simple script to parse the history log files from TeraCopy. It does some correlation between databases found at the paths:
 
