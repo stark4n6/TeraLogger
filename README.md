@@ -46,5 +46,5 @@ options:
 ```
 
 ### To-Do List
-Add main.db parser as second CSV file output
-Error checks for missing files or incorrect paths
+* Add main.db parser as second CSV file output
+* Error checks for missing files or incorrect paths
