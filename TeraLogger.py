@@ -14,7 +14,7 @@ ascii_art = '''
    |_| \___||_|   \__,_||_____|\___/  \__, | \__, | \___||_|   
                                       |___/  |___/             
     
-        TeraLogger v0.0.1
+        TeraLogger v0.0.2
         https://github.com/stark4n6/TeraLogger
         @KevinPagano3 | @stark4n6 | startme.stark4n6.com
                                                                      '''
@@ -85,7 +85,7 @@ def main():
     print(ascii_art)
     
     # Command line arguments
-    parser = argparse.ArgumentParser(description='TeraLogger v0.0.1 by @KevinPagano3 | @stark4n6 | https://github.com/stark4n6/TeraLogger')
+    parser = argparse.ArgumentParser(description='TeraLogger v0.0.2 by @KevinPagano3 | @stark4n6 | https://github.com/stark4n6/TeraLogger')
     parser.add_argument('-i', '--input_path', required=True, type=str, action="store", help='Input file/folder path')
     parser.add_argument('-o', '--output_path', required=True, type=str, action="store", help='Output folder path')
     
@@ -222,7 +222,7 @@ def main():
             print(f"Skipping file {sqlite3_file_path} because it is corrupted.")
     
     # Create CSV file output
-    with open(out_folder + 'TeraLogger_History_' + output_ts +'.tsv', 'w', encoding="utf-8", newline='') as f_output:
+    with open(out_folder + 'TeraLogger_Teracopy_History_' + output_ts +'.tsv', 'w', encoding="utf-8", newline='') as f_output:
         tsv_writer = csv.writer(f_output, delimiter='\t')
         tsv_writer.writerow(data_headers)
         for i in data_list:
