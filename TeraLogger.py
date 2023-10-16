@@ -222,7 +222,7 @@ def main():
             print(f"Skipping file {sqlite3_file_path} because it is corrupted.")
     
     # Create CSV file output
-    with open(out_folder + 'TeraLogger_History_' + output_ts +'.tsv', 'w', newline='') as f_output:
+    with open(out_folder + 'TeraLogger_History_' + output_ts +'.tsv', 'w', encoding="utf-8", newline='') as f_output:
         tsv_writer = csv.writer(f_output, delimiter='\t')
         tsv_writer.writerow(data_headers)
         for i in data_list:
