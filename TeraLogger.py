@@ -35,9 +35,20 @@ def open_sqlite_db_readonly(path):
             path = "%5C%5C%3F%5C" + path
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
 
+def does_table_exist(connection, table_name):
+    '''Checks if a table with specified name exists in an sqlite db'''
+    try:
+        query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
+        cursor = connection.execute(query)
+        for row in cursor:
+            return True
+    except sqlite3.DatabaseError as ex:
+        logfunc(f"Query error, query={query} Error={str(ex)}")
+    return False
+
 def main():
-    # SQLite query for history dbs
-    sql_query_history = """
+    # SQLite query for history db Files table
+    sql_query_history = '''
     select 
     Source,
     case
@@ -68,7 +79,14 @@ def main():
         when Hidden = 0 then ''
         when Hidden = 0 then 'Yes'
     end
-    from Files"""
+    from Files
+    '''
+    
+    # SQLite query for history db Log table
+    sql_query_history_log = '''
+    select *
+    from Log
+    '''
     
     # SQLite query for main db
     sql_query_main = '''
@@ -76,11 +94,17 @@ def main():
     Name AS "name",
     datetime(julianday(Started)) as "job_start",
     datetime(julianday(Finished)) as "job_end",
+    case
+        when operation = 1 then 'Copy'
+        when operation = 2 then 'Move'
+        when operation = 3 then 'Test'
+        when operation = 6 then 'Delete'
+    end AS "operation",        
     source AS "src_path",
     target AS "target_path"
     from list
-    '''        
-
+    '''
+    
     start_time = time.time()
     print(ascii_art)
     
@@ -138,17 +162,21 @@ def main():
     print('-'* (len('Source: '+ input_path)))
     print('Source: '+ input_path.replace('\\\\?\\',''))
     print('Destination: '+ output_path.replace('\\\\?\\',''))
+    print()
     
-    data_headers = ('Job Start','Job End','Source File Path','Source Folder','Destination Folder','Status','File Size','Is Folder','File Creation Date','File Access Date','File Write Date','Source CRC','Target CRC','Message','Marked','Hidden','Job File Path')
+    data_headers = ('Job Start','Job End','Job Type','Source File Path','Source Folder','Destination Folder','Status','File Size','Is Folder','File Creation Date','File Access Date','File Write Date','Source CRC','Target CRC','Message','Marked','Hidden','Job File Path')
+    data_headers_log = ('Timestamp','Message','Source')
     
     base = 'TeraLogger_Out_'
     db_name = ''
     job_start = ''
     job_end = ''
-    source_path = ''
-    dest_path = ''
+    src_path = ''
+    target_path = ''
+    operation = ''
     main_dict = {}
     data_list = []
+    data_list_log = []
     value_list = []
     count = 0
         
@@ -181,15 +209,18 @@ def main():
                         
                     cursor.close()
                     connection.close()
+                    print('Main.db processed.')
+                    print()
             else:
                 main_results = []
         except sqlite3.DatabaseError:
             # If the database is corrupted, skip the file.
+            print(f"Skipping file {main_file_path} because it is corrupted.")
             main_results = []
     
-    for sqlite3_file_path, results in iterate_folder_sqlite3_files(history_folder_path, sql_query_history):
+    for sqlite3_file_path, results, results_log in iterate_folder_sqlite3_files(history_folder_path, sql_query_history, sql_query_history_log):
         folder, basename = os.path.split(sqlite3_file_path) 
-        # Do something with the results of the SQL query, or skip the file if the database is corrupted.
+        # Do something with the results of the SQL query, or skip the file if the database is empty.
         if results:     
             for row in results:
                 og_file_path = row[0]
@@ -214,25 +245,45 @@ def main():
                         job_end = main_dict[key].get('job_end')
                         src_path = main_dict[key].get('src_path')
                         target_path = main_dict[key].get('target_path')
+                        operation = main_dict[key].get('operation')
        
-                        data_list.append((job_start,job_end,og_file_path,src_path,target_path,file_state,file_size,is_folder,create_ts,access_ts,write_ts,source_crc,target_crc,message,marked,hidden,og_db_path))
+                        data_list.append((job_start,job_end,operation,og_file_path,src_path,target_path,file_state,file_size,is_folder,create_ts,access_ts,write_ts,source_crc,target_crc,message,marked,hidden,og_db_path))
     
                 count += 1
         else:
-            print(f"Skipping file {sqlite3_file_path} because it is corrupted.")
+            print(f"Skipping file {sqlite3_file_path} because DB has no entries.")
+            print()
+            #continue
+        
+        if results_log:
+            for row in results_log:
+                log_timestamp = row[0]
+                log_message = row[1]
+                
+                data_list_log.append((log_timestamp,log_message, basename))
+        else:
+            print(f"Skipping file {sqlite3_file_path} because DB has no logs.")
+            print()
+            #continue
     
     # Create CSV file output
-    with open(out_folder + 'TeraLogger_Teracopy_History_' + output_ts +'.tsv', 'w', encoding="utf-8", newline='') as f_output:
+    with open(out_folder + 'TeraLogger_Teracopy_History_Files_' + output_ts +'.tsv', 'w', encoding="utf-8", newline='') as f_output:
         tsv_writer = csv.writer(f_output, delimiter='\t')
         tsv_writer.writerow(data_headers)
         for i in data_list:
+            tsv_writer.writerow(i)
+            
+    with open(out_folder + 'TeraLogger_Teracopy_History_Log_' + output_ts +'.tsv', 'w', encoding="utf-8", newline='') as f_output:
+        tsv_writer = csv.writer(f_output, delimiter='\t')
+        tsv_writer.writerow(data_headers_log)
+        for i in data_list_log:
             tsv_writer.writerow(i)
     
     print()
     print('****JOB FINISHED****')
     print(str(count) + ' entries found')
 
-def iterate_folder_sqlite3_files(history_folder_path, sql_query_history):
+def iterate_folder_sqlite3_files(history_folder_path, sql_query_history, sql_query_history_log):
     for sqlite3_file_path in glob.glob(f"{history_folder_path}/*.db"):
         try:
             connection = open_sqlite_db_readonly(sqlite3_file_path)
@@ -244,18 +295,31 @@ def iterate_folder_sqlite3_files(history_folder_path, sql_query_history):
             if cursor.fetchone()[0] == "ok":
                 cursor.execute(sql_query_history)
                 results = cursor.fetchall()
+                
+                log_exists = does_table_exist(connection, 'Log')
+                
+                if log_exists:
+                    cursor.execute(sql_query_history_log)
+                    results_log = cursor.fetchall()
+                else:
+                    results_log = []
+                
+                cursor.close()
+                connection.close()
             else:
                 results = []
+                results_log = []
+                
+                cursor.close()
+                connection.close()                
         except sqlite3.DatabaseError:
             # If the database is corrupted, skip the file.
             results = []
-
-        # Close the cursor and connection.
-        cursor.close()
-        connection.close()
-
+            results_log = []
+            connection.close()            
+        
         # Yield the results of the SQL query, or an empty tuple if the database is corrupted.
-        yield sqlite3_file_path, results
+        yield sqlite3_file_path, results, results_log
         
 if __name__ == '__main__':
     main()
