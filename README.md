@@ -29,13 +29,13 @@ I would recommend collecting the whole TeraCopy folder from the user's AppData f
    |_| \___||_|   \__,_||_____|\___/  \__, | \__, | \___||_|
                                       |___/  |___/
 
-        TeraLogger v0.0.1
+        TeraLogger v0.0.2
         https://github.com/stark4n6/TeraLogger
         @KevinPagano3 | @stark4n6 | startme.stark4n6.com
 
 usage: TeraLogger.py [-h] -i INPUT_PATH -o OUTPUT_PATH
 
-TeraLogger v0.0.1 by @KevinPagano3 | @stark4n6 | https://github.com/stark4n6/TeraLogger
+TeraLogger v0.0.2 by @KevinPagano3 | @stark4n6 | https://github.com/stark4n6/TeraLogger
 
 options:
   -h, --help            show this help message and exit
