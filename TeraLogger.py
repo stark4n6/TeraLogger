@@ -166,7 +166,7 @@ def main():
     print(f"Destination: {display_output}\n")
 
     data_headers = (
-        'Job Start','Job End','Job Type','Source File Path','Source Folder','Destination Folder',
+        'Job Start (Local)','Job End (Local)','Job Type','Source File Path','Source Folder','Destination Folder',
         'Status','File Size','Is Folder','File Creation Date','File Access Date','File Write Date',
         'Source CRC','Target CRC','Message','Marked','Hidden','Job File Path'
     )
