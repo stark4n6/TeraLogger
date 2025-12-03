@@ -170,7 +170,7 @@ def main():
         'Status','File Size','Is Folder','File Creation Date','File Access Date','File Write Date',
         'Source CRC','Target CRC','Message','Marked','Hidden','Job File Path'
     )
-    data_headers_log = ('Timestamp','Message','Source')
+    data_headers_log = ('Timestamp (Local)','Message','Source')
 
     base = 'TeraLogger_Out_'
     data_list = []
