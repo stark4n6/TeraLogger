@@ -5,321 +5,307 @@ import os
 import sqlite3
 import sys
 import time
+import urllib.parse
 
-ascii_art = '''  
-  _____                  _                                     
- |_   _|___  _ __  __ _ | |     ___    __ _   __ _   ___  _ __ 
-   | | / _ \| '__|/ _` || |    / _ \  / _` | / _` | / _ \| '__|
-   | ||  __/| |  | (_| || |___| (_) || (_| || (_| ||  __/| |   
-   |_| \___||_|   \__,_||_____|\___/  \__, | \__, | \___||_|   
-                                      |___/  |___/             
-    
-        TeraLogger v0.0.2
-        https://github.com/stark4n6/TeraLogger
-        @KevinPagano3 | @stark4n6 | startme.stark4n6.com
-                                                                     '''
-def is_platform_windows():
-    # Returns True if running on Windows
-    return os.name == 'nt'
+# --- MAPPING DICTIONARIES ---
 
-def open_sqlite_db_readonly(path):
-    # Opens an sqlite db in read-only mode, so original db (and -wal/journal are intact)
-    if is_platform_windows():
-        if path.startswith('\\\\?\\UNC\\'): # UNC long path
-            path = "%5C%5C%3F%5C" + path[4:]
-        elif path.startswith('\\\\?\\'):    # normal long path
-            path = "%5C%5C%3F%5C" + path[4:]
-        elif path.startswith('\\\\'):       # UNC path
-            path = "%5C%5C%3F%5C\\UNC" + path[1:]
-        else:                               # normal path
-            path = "%5C%5C%3F%5C" + path
-    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+STATE_MAP = {0: 'Added', 1: 'OK', 2: 'Verified', 3: 'Error', 4: 'Skipped', 5: 'Deleted', 6: 'Moved'}
+IS_FOLDER_MAP = {0: 'No', 1: 'Yes'}
+MARKED_MAP = {0: '', 1: 'Yes'}
+HIDDEN_MAP = {0: '', 1: 'Yes'}
+OPERATION_MAP = {1: 'Copy', 2: 'Move', 3: 'Test', 6: 'Delete'}
 
-def does_table_exist(connection, table_name):
-    '''Checks if a table with specified name exists in an sqlite db'''
-    try:
-        query = f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'"
-        cursor = connection.execute(query)
-        for row in cursor:
-            return True
-    except sqlite3.DatabaseError as ex:
-        logfunc(f"Query error, query={query} Error={str(ex)}")
-    return False
+# --- SQL QUERIES (Simplified/Optimized) ---
 
-def main():
-    # SQLite query for history db Files table
-    sql_query_history = '''
-    select 
+sql_query_history = '''
+SELECT
     Source,
-    case
-        when State = 0 then 'Added'
-        when State = 1 then 'OK'
-        when State = 2 then 'Verified'
-        when State = 3 then 'Error'
-        when State = 4 then 'Skipped'
-        when State = 5 then 'Deleted'
-        when State = 6 then 'Moved'
-    end,
-    Size, 
-    case 
-        when IsFolder = 0 then 'No'
-        when IsFolder = 1 then 'Yes'
-    end, 
-    datetime(julianday(Creation)), 
-    datetime(julianday(Access)), 
-    datetime(julianday(Write)), 
-    SourceCRC, 
+    State,
+    Size,
+    IsFolder,
+    datetime(julianday(Creation)),
+    datetime(julianday(Access)),
+    datetime(julianday(Write)),
+    SourceCRC,
     TargetCRC,
     Message,
-    case
-        when Marked = 0 then ''
-        when Marked = 0 then 'Yes'
-    end, 
-    case
-        when Hidden = 0 then ''
-        when Hidden = 0 then 'Yes'
-    end
-    from Files
-    '''
-    
-    # SQLite query for history db Log table
-    sql_query_history_log = '''
-    select *
-    from Log
-    '''
-    
-    # SQLite query for main db
-    sql_query_main = '''
-    select
+    Marked,
+    Hidden
+FROM Files
+'''
+
+sql_query_history_log = 'SELECT Timestamp, Message FROM Log'
+
+sql_query_main = '''
+SELECT
     Name AS "name",
-    datetime(julianday(Started)) as "job_start",
-    datetime(julianday(Finished)) as "job_end",
-    case
-        when operation = 1 then 'Copy'
-        when operation = 2 then 'Move'
-        when operation = 3 then 'Test'
-        when operation = 6 then 'Delete'
-    end AS "operation",        
-    source AS "src_path",
-    target AS "target_path"
-    from list
-    '''
-    
+    datetime(julianday(Started)) AS "job_start",
+    datetime(julianday(Finished)) AS "job_end",
+    Operation AS "operation",
+    Source AS "src_path",
+    Target AS "target_path"
+FROM list
+'''
+
+# --- ASCII ART ---
+ascii_art = r''' 
+  _______             _                                
+ |__   __|           | |                              
+    | | ___ _ __ __ _| |     ___   __ _  __ _  ___ _ __ 
+    | |/ _ \ '__/ _` | |    / _ \ / _` |/ _` |/ _ \ '__|
+    | |  __/ | | (_| | |___| (_) | (_| | (_| |  __/ |    
+    |_|\___|_|  \__,_|______\___/ \__, |\__, |\___|_|    
+                                   __/ | __/ |            
+                                  |___/ |___/            
+  
+TeraLogger v1.0
+https://github.com/stark4n6/TeraLogger
+'''
+
+def is_platform_windows():
+    return os.name == 'nt'
+
+def _ensure_windows_long_path(raw_path: str) -> str:
+    path = os.path.abspath(raw_path).replace('/', '\\')
+    if path.startswith('\\\\?\\'):
+        return path
+    if path.startswith('\\\\'):
+        return '\\\\?\\UNC' + path[1:]
+    return '\\\\?\\' + path
+
+def open_sqlite_db_readonly(path):
+    if is_platform_windows():
+        normalized = _ensure_windows_long_path(path)
+    else:
+        normalized = os.path.abspath(path)
+
+    uri_path = urllib.parse.quote(normalized)
+    return sqlite3.connect(f"file:{uri_path}?mode=ro", uri=True)
+
+def does_table_exist(connection, table_name):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?;", (table_name,))
+        return cursor.fetchone() is not None
+    except sqlite3.DatabaseError:
+        return False
+
+def iterate_folder_sqlite3_files(history_folder_path):
+    pattern = os.path.join(history_folder_path, '*.db')
+    for sqlite3_file_path in glob.glob(pattern):
+        results = []
+        results_log = []
+        log_table_exists = False
+
+        try:
+            with open_sqlite_db_readonly(sqlite3_file_path) as connection:
+                cursor = connection.cursor()
+                cursor.execute("PRAGMA integrity_check")
+                row = cursor.fetchone()
+                if not row or row[0] != "ok":
+                    print(f"Skipping {sqlite3_file_path} (failed integrity check: {row[0] if row else 'unknown'})")
+                    continue
+
+                # Files table
+                try:
+                    cursor.execute(sql_query_history)
+                    results = cursor.fetchall()
+                except sqlite3.DatabaseError as ex:
+                    print(f"Error querying Files in {sqlite3_file_path}: {ex}")
+
+                # Log table
+                if does_table_exist(connection, 'Log'):
+                    log_table_exists = True
+                    try:
+                        cursor.execute(sql_query_history_log)
+                        results_log = cursor.fetchall()
+                    except sqlite3.DatabaseError as ex:
+                        print(f"Error querying Log in {sqlite3_file_path}: {ex}")
+
+        except Exception as ex:
+            print(f"Error opening {sqlite3_file_path}: {ex}")
+
+        yield sqlite3_file_path, results, results_log, log_table_exists
+
+def log_to_file(log_path, message):
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()) + f".{int((time.time()%1)*1000):03d}"
+    with open(log_path, "a", encoding="utf-8") as lf:
+        lf.write(f"[{ts}] {message}\n")
+
+def main():
     start_time = time.time()
     print(ascii_art)
-    
-    # Command line arguments
-    parser = argparse.ArgumentParser(description='TeraLogger v0.0.2 by @KevinPagano3 | @stark4n6 | https://github.com/stark4n6/TeraLogger')
-    parser.add_argument('-i', '--input_path', required=True, type=str, action="store", help='Input file/folder path')
-    parser.add_argument('-o', '--output_path', required=True, type=str, action="store", help='Output folder path')
-    
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-i', '--input_path', required=True, type=str, help='Input file/folder path')
+    parser.add_argument('-o', '--output_path', required=True, type=str, help='Output folder path')
     args = parser.parse_args()
-    
-    input_path = args.input_path
-    output_path = args.output_path
-    
-    if args.output_path is None:
-        parser.error('No OUTPUT folder path provided')
-        return
-    else:
-        output_path = os.path.abspath(args.output_path)
-    
-    if output_path is None:
-        parser.error('No OUTPUT folder selected. Run the program again.')
-        return
-    
-    if input_path is None:
-        parser.error('No INPUT file or folder selected. Run the program again.')
-        return
-    
+
+    input_path = os.path.abspath(args.input_path)
+    output_path = os.path.abspath(args.output_path)
+
     if not os.path.exists(input_path):
-        parser.error('INPUT folder does not exist! Run the program again.')
-        return
-    
-    if not os.path.exists(output_path):
-        parser.error('OUTPUT folder does not exist! Run the program again.')
-        return  
-    
-    # File system extractions can contain paths > 260 char, which causes problems
-    # This fixes the problem by prefixing \\?\ on each windows path.
+        parser.error("Input folder does not exist.")
+
+    # Apply long path handling
     if is_platform_windows():
-        if input_path[1] == ':': input_path = '\\\\?\\' + input_path.replace('/', '\\')
-        if not input_path.endswith('\\'):
-            input_path = input_path + '\\'        
-        
-        if output_path[1] == ':': output_path = '\\\\?\\' + output_path.replace('/', '\\')
-        
-        if not output_path.endswith('\\'):
-            output_path = output_path + '\\'
-    
-    platform = is_platform_windows()
-    if platform:
+        input_path = _ensure_windows_long_path(input_path)
+        if not input_path.endswith('\\'): input_path += '\\'
+        output_path = _ensure_windows_long_path(output_path)
+        if not output_path.endswith('\\'): output_path += '\\'
         splitter = '\\'
     else:
+        if not input_path.endswith('/'): input_path += '/'
+        if not output_path.endswith('/'): output_path += '/'
         splitter = '/'
-    #-------------------------------   
-    
-    print('-'* (len('Source: '+ input_path)))
-    print('Source: '+ input_path.replace('\\\\?\\',''))
-    print('Destination: '+ output_path.replace('\\\\?\\',''))
-    print()
-    
-    data_headers = ('Job Start','Job End','Job Type','Source File Path','Source Folder','Destination Folder','Status','File Size','Is Folder','File Creation Date','File Access Date','File Write Date','Source CRC','Target CRC','Message','Marked','Hidden','Job File Path')
+
+    # Strip long path prefix for display purposes
+    display_input = input_path.replace('\\\\?\\','')
+    display_output = output_path.replace('\\\\?\\','')
+    print(f"Source: {display_input}")
+    print(f"Destination: {display_output}\n")
+
+    data_headers = (
+        'Job Start','Job End','Job Type','Source File Path','Source Folder','Destination Folder',
+        'Status','File Size','Is Folder','File Creation Date','File Access Date','File Write Date',
+        'Source CRC','Target CRC','Message','Marked','Hidden','Job File Path'
+    )
     data_headers_log = ('Timestamp','Message','Source')
-    
+
     base = 'TeraLogger_Out_'
-    db_name = ''
-    job_start = ''
-    job_end = ''
-    src_path = ''
-    target_path = ''
-    operation = ''
-    main_dict = {}
     data_list = []
     data_list_log = []
-    value_list = []
+    main_dict = {}
     count = 0
-        
-    history_folder_path = input_path + 'History' + splitter
-    
-    output_ts = time.strftime("%Y%m%d-%H%M%S")
-    out_folder = output_path + base + output_ts + splitter
-    os.makedirs(out_folder)
+    parsed_history = 0
+    parsed_files_total = 0
+    parsed_logs_total = 0
 
-    # Parsing main.db job database
-    for main_file_path in glob.glob(f"{input_path}main.db"):
+    # Output folder
+    output_ts = time.strftime("%Y%m%d-%H%M%S")
+    out_folder = os.path.join(output_path, base + output_ts) + splitter
+    os.makedirs(out_folder, exist_ok=True)
+    out_folder_str = out_folder.replace('\\\\?\\', '')
+
+    # Log file
+    log_path = os.path.join(out_folder, f"TeraLogger_RunLog_{output_ts}.txt")
+    log_to_file(log_path, "TeraLogger run started.")
+    log_path_str = log_path.replace('\\\\?\\', '')
+
+    # Parse main.db
+    raw_input_glob = input_path.replace('\\\\?\\','') if is_platform_windows() else input_path
+    for main_file_path in glob.glob(os.path.join(raw_input_glob, "main.db")):
         try:
-            connection = open_sqlite_db_readonly(main_file_path)
-            # Execute the PRAGMA integrity check.
-            cursor = connection.cursor()
-            cursor.execute("PRAGMA integrity_check")
-    
-            # If the integrity check passes, execute the SQL query.
-            if cursor.fetchone()[0] == "ok":
-                cursor.execute(sql_query_main)
-                main_results = cursor.fetchall()
-                
-                column_names = [row[0] for row in cursor.description]
-    
-                if main_results:
-                    for row in main_results:
-                        main_dict[row[0]] = {}
-                        for i, column_name in enumerate(column_names):
-                            main_dict[row[0]][column_name] = row[i]
-                        
-                    cursor.close()
-                    connection.close()
-                    print('Main.db processed.')
-                    print()
-            else:
-                main_results = []
-        except sqlite3.DatabaseError:
-            # If the database is corrupted, skip the file.
-            print(f"Skipping file {main_file_path} because it is corrupted.")
-            main_results = []
-    
-    for sqlite3_file_path, results, results_log in iterate_folder_sqlite3_files(history_folder_path, sql_query_history, sql_query_history_log):
-        folder, basename = os.path.split(sqlite3_file_path) 
-        # Do something with the results of the SQL query, or skip the file if the database is empty.
-        if results:     
+            with open_sqlite_db_readonly(main_file_path) as connection:
+                cursor = connection.cursor()
+                cursor.execute("PRAGMA integrity_check")
+                row = cursor.fetchone()
+                if row and row[0] == "ok":
+                    cursor.execute(sql_query_main)
+                    main_results = cursor.fetchall()
+                    if main_results:
+                        cols = [c[0] for c in cursor.description]
+                        for r in main_results:
+                            job_name = r[0]
+                            main_dict[job_name] = {cols[i]: r[i] for i in range(len(cols))}
+                        print("Main.db processed.\n")
+                        log_to_file(log_path, "Main.db processed successfully.")
+                    else:
+                        print("Main.db found but contains no jobs.\n")
+                        log_to_file(log_path, "Main.db contained no jobs.")
+        except Exception as ex:
+            print(f"Error processing main.db: {ex}")
+            log_to_file(log_path, f"Error processing main.db: {ex}")
+
+    # Process History DB files
+    history_folder_path = input_path + "History" + splitter
+    for sqlite3_file_path, results, results_log, log_exists in iterate_folder_sqlite3_files(history_folder_path):
+
+        parsed_history += 1
+        basename = os.path.split(sqlite3_file_path)[1]
+
+        print(f"Processed history file: {basename}")
+        log_to_file(log_path, f"Processed history DB: {basename}")
+
+        job_info = main_dict.get(basename)
+        if job_info:
+            job_start = job_info.get("job_start")
+            job_end = job_info.get("job_end")
+            src_path = job_info.get("src_path")
+            target_path = job_info.get("target_path")
+            raw_op = job_info.get("operation")
+            operation = OPERATION_MAP.get(raw_op, f"Unknown ({raw_op})")
+        else:
+            job_start = job_end = operation = src_path = target_path = "N/A"
+
+        if results:
+            parsed_files_total += len(results)
             for row in results:
                 og_file_path = row[0]
-                file_state = row[1]
-                file_size = row[2]
-                is_folder = row[3]
-                create_ts = row[4]
-                access_ts = row[5]
-                write_ts = row[6]
-                source_crc = row[7]
-                target_crc = row[8]
-                message = row[9]
-                marked = row[10]
-                hidden = row[11]            
-                
+                file_state = STATE_MAP.get(row[1], f"Unknown ({row[1]})")
+                is_folder = IS_FOLDER_MAP.get(row[3], f"Unknown ({row[3]})")
+                marked = MARKED_MAP.get(row[10], f"Unknown ({row[10]})")
+                hidden = HIDDEN_MAP.get(row[11], f"Unknown ({row[11]})")
                 og_db_path = sqlite3_file_path.replace('\\\\?\\','')
-                
-                for key in main_dict.keys():
-                    if basename == key:
-                        db_name = main_dict[key].get('name')
-                        job_start = main_dict[key].get('job_start')
-                        job_end = main_dict[key].get('job_end')
-                        src_path = main_dict[key].get('src_path')
-                        target_path = main_dict[key].get('target_path')
-                        operation = main_dict[key].get('operation')
-       
-                        data_list.append((job_start,job_end,operation,og_file_path,src_path,target_path,file_state,file_size,is_folder,create_ts,access_ts,write_ts,source_crc,target_crc,message,marked,hidden,og_db_path))
-    
-                count += 1
-        else:
-            print(f"Skipping file {sqlite3_file_path} because DB has no entries.")
-            print()
-            #continue
-        
-        if results_log:
-            for row in results_log:
-                log_timestamp = row[0]
-                log_message = row[1]
-                
-                data_list_log.append((log_timestamp,log_message, basename))
-        else:
-            print(f"Skipping file {sqlite3_file_path} because DB has no logs.")
-            print()
-            #continue
-    
-    # Create CSV file output
-    with open(out_folder + 'TeraLogger_Teracopy_History_Files_' + output_ts +'.tsv', 'w', encoding="utf-8", newline='') as f_output:
-        tsv_writer = csv.writer(f_output, delimiter='\t')
-        tsv_writer.writerow(data_headers)
-        for i in data_list:
-            tsv_writer.writerow(i)
-            
-    with open(out_folder + 'TeraLogger_Teracopy_History_Log_' + output_ts +'.tsv', 'w', encoding="utf-8", newline='') as f_output:
-        tsv_writer = csv.writer(f_output, delimiter='\t')
-        tsv_writer.writerow(data_headers_log)
-        for i in data_list_log:
-            tsv_writer.writerow(i)
-    
-    print()
-    print('****JOB FINISHED****')
-    print(str(count) + ' entries found')
 
-def iterate_folder_sqlite3_files(history_folder_path, sql_query_history, sql_query_history_log):
-    for sqlite3_file_path in glob.glob(f"{history_folder_path}/*.db"):
-        try:
-            connection = open_sqlite_db_readonly(sqlite3_file_path)
-            # Execute the PRAGMA integrity check.
-            cursor = connection.cursor()
-            cursor.execute("PRAGMA integrity_check")
+                data_list.append((
+                    job_start, job_end, operation,
+                    og_file_path, src_path, target_path,
+                    file_state, row[2], is_folder,
+                    row[4], row[5], row[6],
+                    row[7], row[8], row[9],
+                    marked, hidden, og_db_path
+                ))
+        else:
+            print(f"History file {basename} has no rows in Files table.")
+            log_to_file(log_path, f"Files table empty in: {basename}")
 
-            # If the integrity check passes, execute the SQL query.
-            if cursor.fetchone()[0] == "ok":
-                cursor.execute(sql_query_history)
-                results = cursor.fetchall()
-                
-                log_exists = does_table_exist(connection, 'Log')
-                
-                if log_exists:
-                    cursor.execute(sql_query_history_log)
-                    results_log = cursor.fetchall()
-                else:
-                    results_log = []
-                
-                cursor.close()
-                connection.close()
-            else:
-                results = []
-                results_log = []
-                
-                cursor.close()
-                connection.close()                
-        except sqlite3.DatabaseError:
-            # If the database is corrupted, skip the file.
-            results = []
-            results_log = []
-            connection.close()            
-        
-        # Yield the results of the SQL query, or an empty tuple if the database is corrupted.
-        yield sqlite3_file_path, results, results_log
-        
-if __name__ == '__main__':
+        # Process Log
+        if log_exists:
+            print(f"Processed Log for: {basename}")
+            log_to_file(log_path, f"Processed Log table for: {basename}")
+
+            if results_log:
+                parsed_logs_total += len(results_log)
+                for row in results_log:
+                    data_list_log.append((row[0], row[1], basename))
+        else:
+            print(f"{basename} has no Log table.")
+            log_to_file(log_path, f"No Log table found in: {basename}")
+
+    # Output TSVs
+    try:
+        tsv_files_path = os.path.join(out_folder, f"TeraLogger_Teracopy_History_Files_{output_ts}.tsv")
+        with open(tsv_files_path, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f, delimiter="\t")
+            w.writerow(data_headers)
+            w.writerows(data_list)
+
+        if data_list_log:
+            tsv_log_path = os.path.join(out_folder, f"TeraLogger_Teracopy_History_Log_{output_ts}.tsv")
+            with open(tsv_log_path, "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f, delimiter="\t")
+                w.writerow(data_headers_log)
+                w.writerows(data_list_log)
+            log_to_file(log_path, "Log TSV file written successfully.")
+        else:
+            log_to_file(log_path, "Skipping Log TSV file output (0 log entries found).")
+    except Exception as ex:
+        print(f"Error writing TSVs: {ex}")
+        log_to_file(log_path, f"Error writing TSVs: {ex}")
+
+    # Summary
+    print("\n===== SUMMARY =====")
+    print(f"History DB files processed: {parsed_history}")
+    print(f"Total file entries parsed: {parsed_files_total}")
+    print(f"Total log entries parsed: {parsed_logs_total}")
+    print(f"Output folder: {out_folder_str}")
+    print(f"Log file: {log_path_str}")
+    print(f"Time: {time.time() - start_time:.2f} sec")
+
+    log_to_file(log_path, "TeraLogger run completed.")
+    print("\n****JOB FINISHED****")
+
+
+if __name__ == "__main__":
     main()
