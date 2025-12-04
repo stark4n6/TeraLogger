@@ -273,26 +273,26 @@ def main():
             print(f"{basename} has no Log table.")
             log_to_file(log_path, f"No Log table found in: {basename}")
 
-    # Output TSVs
+    # Output CSVs
     try:
-        tsv_files_path = os.path.join(out_folder, f"TeraLogger_Teracopy_History_Files_{output_ts}.tsv")
-        with open(tsv_files_path, "w", encoding="utf-8", newline="") as f:
-            w = csv.writer(f, delimiter="\t")
+        csv_files_path = os.path.join(out_folder, f"TeraLogger_Teracopy_History_Files_{output_ts}.csv")
+        with open(csv_files_path, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f, delimiter=",")
             w.writerow(data_headers)
             w.writerows(data_list)
 
         if data_list_log:
-            tsv_log_path = os.path.join(out_folder, f"TeraLogger_Teracopy_History_Log_{output_ts}.tsv")
-            with open(tsv_log_path, "w", encoding="utf-8", newline="") as f:
-                w = csv.writer(f, delimiter="\t")
+            csv_log_path = os.path.join(out_folder, f"TeraLogger_Teracopy_History_Log_{output_ts}.csv")
+            with open(csv_log_path, "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f, delimiter=",")
                 w.writerow(data_headers_log)
                 w.writerows(data_list_log)
-            log_to_file(log_path, "Log TSV file written successfully.")
+            log_to_file(log_path, "Log CSV file written successfully.")
         else:
-            log_to_file(log_path, "Skipping Log TSV file output (0 log entries found).")
+            log_to_file(log_path, "Skipping Log CSV file output (0 log entries found).")
     except Exception as ex:
-        print(f"Error writing TSVs: {ex}")
-        log_to_file(log_path, f"Error writing TSVs: {ex}")
+        print(f"Error writing CSVs: {ex}")
+        log_to_file(log_path, f"Error writing CSVs: {ex}")
 
     # Summary
     print("\n===== SUMMARY =====")
