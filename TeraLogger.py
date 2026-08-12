@@ -58,7 +58,7 @@ ascii_art = r'''
                                    __/ | __/ |            
                                   |___/ |___/            
   
-TeraLogger v1.0
+TeraLogger v1.1
 https://github.com/stark4n6/TeraLogger
 '''
 
@@ -162,6 +162,10 @@ def main():
     # Strip long path prefix for display purposes
     display_input = input_path.replace('\\\\?\\','')
     display_output = output_path.replace('\\\\?\\','')
+    
+    # Base folder name (e.g., 'TeraCopy')
+    input_base_folder = os.path.basename(os.path.normpath(display_input))
+
     print(f"Source: {display_input}")
     print(f"Destination: {display_output}\n")
 
@@ -246,7 +250,10 @@ def main():
                 is_folder = IS_FOLDER_MAP.get(row[3], f"Unknown ({row[3]})")
                 marked = MARKED_MAP.get(row[10], f"Unknown ({row[10]})")
                 hidden = HIDDEN_MAP.get(row[11], f"Unknown ({row[11]})")
+                
+                # Format Job File Path to include the base TeraCopy folder name
                 og_db_path = sqlite3_file_path.replace('\\\\?\\','')
+                relative_db_path = os.path.join(input_base_folder, os.path.relpath(og_db_path, display_input))
 
                 data_list.append((
                     job_start, job_end, operation,
@@ -254,7 +261,7 @@ def main():
                     file_state, row[2], is_folder,
                     row[4], row[5], row[6],
                     row[7], row[8], row[9],
-                    marked, hidden, og_db_path
+                    marked, hidden, relative_db_path
                 ))
         else:
             print(f"History file {basename} has no rows in Files table.")
